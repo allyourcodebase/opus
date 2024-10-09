@@ -130,6 +130,7 @@ fn buildCelt(
             "-fno-sanitize=undefined",
         },
     });
+    lib.linkLibC();
 
     // "x86/x86cpu.c ",
     // "x86/x86_celt_map.",
@@ -219,6 +220,7 @@ fn buildSilk(
             "-std=gnu99",
         },
     });
+    lib.linkLibC();
 
     return lib;
 }
