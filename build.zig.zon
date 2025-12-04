@@ -1,7 +1,8 @@
 .{
-    .name = "opus",
-    .version = "0.0.0",
-    .minimum_zig_version = "0.13.0",
+    .name = .opus,
+    .version = "0.0.1",
+    .minimum_zig_version = "0.16.0-dev.1484+d0ba6642b",
+    .fingerprint = 0x8db4fd2c707ee1be,
     .dependencies = .{
         .xiph_opus = .{
             .url = "git+https://github.com/xiph/opus#ff6dea5e1a72b8a2aeb7fc3656857d86a420ab89",

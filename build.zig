@@ -20,10 +20,14 @@ pub fn build(b: *std.Build) void {
     const celt = buildCelt(b, target, optimize, xiph_opus, config);
     const silk = buildSilk(b, target, optimize, xiph_opus, config);
 
-    const lib = b.addStaticLibrary(.{
-        .name = "opus",
+    const mod = b.addModule("opus", .{
         .target = target,
         .optimize = optimize,
+    });
+    const lib = b.addLibrary(.{
+        .name = "opus",
+        .linkage = .static,
+        .root_module = mod,
     });
 
     lib.linkLibrary(celt);
@@ -70,8 +74,10 @@ pub fn build(b: *std.Build) void {
 
     const test_opus_api = b.addExecutable(.{
         .name = "test_opus_api",
-        .target = target,
-        .optimize = optimize,
+        .root_module = b.createModule(.{
+            .target = target,
+            .optimize = optimize,
+        }),
     });
 
     test_opus_api.linkLibrary(lib);
@@ -96,10 +102,14 @@ fn buildCelt(
     xiph_opus: *std.Build.Dependency,
     config: *std.Build.Step.ConfigHeader,
 ) *std.Build.Step.Compile {
-    const lib = b.addStaticLibrary(.{
-        .name = "celt",
+    const mod = b.addModule("celt", .{
         .target = target,
         .optimize = optimize,
+    });
+    const lib = b.addLibrary(.{
+        .name = "celt",
+        .linkage = .static,
+        .root_module = mod,
     });
 
     lib.addConfigHeader(config);
@@ -153,10 +163,13 @@ fn buildSilk(
     xiph_opus: *std.Build.Dependency,
     config: *std.Build.Step.ConfigHeader,
 ) *std.Build.Step.Compile {
-    const lib = b.addStaticLibrary(.{
-        .name = "silk",
+    const mod = b.addModule("silk", .{
         .target = target,
         .optimize = optimize,
+    });
+    const lib = b.addLibrary(.{
+        .name = "silk",
+        .root_module = mod,
     });
 
     lib.addConfigHeader(config);
