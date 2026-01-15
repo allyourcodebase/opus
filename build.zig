@@ -30,19 +30,19 @@ pub fn build(b: *std.Build) void {
         .root_module = mod,
     });
 
-    lib.linkLibrary(celt);
-    lib.linkLibrary(silk);
+    mod.linkLibrary(celt);
+    mod.linkLibrary(silk);
 
-    lib.addConfigHeader(config);
+    mod.addConfigHeader(config);
     // lib.linkLibC();
     lib.installHeadersDirectory(xiph_opus.path("include"), ".", .{});
     // lib.installHeader(xiph_opus.path("include/opus.h"), "opus.h");
-    lib.addIncludePath(xiph_opus.path("include"));
-    lib.addIncludePath(xiph_opus.path("src"));
-    lib.addIncludePath(xiph_opus.path("celt"));
-    lib.addIncludePath(xiph_opus.path("silk"));
-    lib.addIncludePath(xiph_opus.path("dnn"));
-    lib.addCSourceFiles(.{
+    mod.addIncludePath(xiph_opus.path("include"));
+    mod.addIncludePath(xiph_opus.path("src"));
+    mod.addIncludePath(xiph_opus.path("celt"));
+    mod.addIncludePath(xiph_opus.path("silk"));
+    mod.addIncludePath(xiph_opus.path("dnn"));
+    mod.addCSourceFiles(.{
         .root = xiph_opus.path("src/"),
         .files = &.{
             // OPUS_SOURCES
@@ -80,8 +80,8 @@ pub fn build(b: *std.Build) void {
         }),
     });
 
-    test_opus_api.linkLibrary(lib);
-    test_opus_api.addCSourceFile(.{
+    test_opus_api.root_module.linkLibrary(lib);
+    test_opus_api.root_module.addCSourceFile(.{
         .file = xiph_opus.path("tests/test_opus_api.c"),
         .flags = &.{
             "-fno-sanitize=undefined",
@@ -105,6 +105,7 @@ fn buildCelt(
     const mod = b.addModule("celt", .{
         .target = target,
         .optimize = optimize,
+        .link_libc = true,
     });
     const lib = b.addLibrary(.{
         .name = "celt",
@@ -112,9 +113,9 @@ fn buildCelt(
         .root_module = mod,
     });
 
-    lib.addConfigHeader(config);
-    lib.addIncludePath(xiph_opus.path("include"));
-    lib.addCSourceFiles(.{
+    mod.addConfigHeader(config);
+    mod.addIncludePath(xiph_opus.path("include"));
+    mod.addCSourceFiles(.{
         .root = xiph_opus.path("celt"),
         .files = &.{
             "bands.c",        "celt.c",
@@ -134,7 +135,6 @@ fn buildCelt(
             "-fno-sanitize=undefined",
         },
     });
-    lib.linkLibC();
 
     // "x86/x86cpu.c ",
     // "x86/x86_celt_map.",
@@ -166,18 +166,19 @@ fn buildSilk(
     const mod = b.addModule("silk", .{
         .target = target,
         .optimize = optimize,
+        .link_libc = true,
     });
     const lib = b.addLibrary(.{
         .name = "silk",
         .root_module = mod,
     });
 
-    lib.addConfigHeader(config);
-    lib.addIncludePath(xiph_opus.path("include"));
-    lib.addIncludePath(xiph_opus.path("silk"));
-    lib.addIncludePath(xiph_opus.path("silk/float"));
-    lib.addIncludePath(xiph_opus.path("celt"));
-    lib.addCSourceFiles(.{
+    mod.addConfigHeader(config);
+    mod.addIncludePath(xiph_opus.path("include"));
+    mod.addIncludePath(xiph_opus.path("silk"));
+    mod.addIncludePath(xiph_opus.path("silk/float"));
+    mod.addIncludePath(xiph_opus.path("celt"));
+    mod.addCSourceFiles(.{
         .root = xiph_opus.path("silk"),
         .files = &(.{
             "CNG.c",                       "code_signs.c",
@@ -227,7 +228,6 @@ fn buildSilk(
             "-std=gnu99",
         },
     });
-    lib.linkLibC();
 
     return lib;
 }
