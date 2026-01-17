@@ -1,6 +1,6 @@
 .{
     .name = .opus,
-    .version = "0.0.1",
+    .version = "0.0.2",
     .minimum_zig_version = "0.16.0-dev.1484+d0ba6642b",
     .fingerprint = 0x8db4fd2c707ee1be,
     .dependencies = .{
