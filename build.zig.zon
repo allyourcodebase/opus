@@ -6,7 +6,7 @@
     .dependencies = .{
         .xiph_opus = .{
             .url = "git+https://github.com/xiph/opus#ff6dea5e1a72b8a2aeb7fc3656857d86a420ab89",
-            .hash = "12202ff680d7162205a59102aad2545d2f9a76cd0a9d048acb41d9cb1f652ce05b2f",
+            .hash = "N-V-__8AANFn5AAv9oDXFiIFpZECqtJUXS-ads0KnQSKy0HZ",
         },
     },
     .paths = .{
