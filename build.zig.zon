@@ -5,8 +5,13 @@
     .fingerprint = 0x8db4fd2c707ee1be,
     .dependencies = .{
         .xiph_opus = .{
-            .url = "git+https://github.com/xiph/opus#ff6dea5e1a72b8a2aeb7fc3656857d86a420ab89",
-            .hash = "N-V-__8AANFn5AAv9oDXFiIFpZECqtJUXS-ads0KnQSKy0HZ",
+            .url = "git+https://github.com/xiph/opus#2d862ea14b233e5a3f3afaf74d96050691af3cd5",
+            .hash = "N-V-__8AAAilKgHBT7tAD6dt0G9iWzpMIQotoPMuJJ8CvURQ",
+        },
+        .plc_model = .{
+            .url = "https://media.xiph.org/opus/models/opus_data-a5177ec6fb7d15058e99e57029746100121f68e4890b1467d4094aa336b6013e.tar.gz",
+            .hash = "N-V-__8AAHNcvgvR2eBvFnXsg5z3AxapDqKJ840RO92E8uS_",
+    .lazy = true,
         },
     },
     .paths = .{

@@ -6,6 +6,9 @@ pub fn build(b: *std.Build) void {
 
     const xiph_opus = b.dependency("xiph_opus", .{});
 
+    const deep_plc = b.option(bool, "deep-plc", "Use deep PLC for SILK");
+    const dred = b.option(bool, "dred", "Enable DRED");
+
     const config = b.addConfigHeader(.{}, .{
         .HAVE_LRINTF = {},
         .HAVE_LRINT = {},
@@ -14,11 +17,23 @@ pub fn build(b: *std.Build) void {
         .USE_ALLOCA = null,
         .FIXED_POINT = b.option(bool, "fixed-point", "use fixed point instead of floats"),
         .ENABLE_ASSERTIONS = b.option(bool, "assertions", "Enable assertions"),
-        .ENABLE_DRED = b.option(bool, "dred", "Enable DRED"),
+        .ENABLE_DRED = dred,
+        .ENABLE_DEEP_PLC = deep_plc,
+        .ENABLE_OSCE = b.option(bool, "osce", "Enable opus speech coding enhancement"),
+        .ENABLE_OSCE_TRAINING_DATA = b.option(
+            bool,
+            "osce-training",
+            "Enable duping of OSCE training data",
+        ),
     });
 
-    const celt = buildCelt(b, target, optimize, xiph_opus, config);
-    const silk = buildSilk(b, target, optimize, xiph_opus, config);
+    const plc_model = if (deep_plc orelse false)
+        b.lazyDependency("plc_model", .{}) orelse return
+    else
+        null;
+
+    const celt = buildCelt(b, target, optimize, xiph_opus, plc_model, config);
+    const silk = buildSilk(b, target, optimize, xiph_opus, plc_model, config);
 
     const mod = b.addModule("opus", .{
         .target = target,
@@ -42,6 +57,7 @@ pub fn build(b: *std.Build) void {
     mod.addIncludePath(xiph_opus.path("celt"));
     mod.addIncludePath(xiph_opus.path("silk"));
     mod.addIncludePath(xiph_opus.path("dnn"));
+    mod.addIncludePath(xiph_opus.path("."));
     mod.addCSourceFiles(.{
         .root = xiph_opus.path("src/"),
         .files = &.{
@@ -69,6 +85,65 @@ pub fn build(b: *std.Build) void {
             "-fno-sanitize=undefined",
         },
     });
+
+    if (dred orelse false) {
+        mod.addCSourceFiles(.{
+            .root = xiph_opus.path("dnn/"),
+            .files = &.{
+                "burg.c",
+                "dred_coding.c",
+                "dred_compare.c",
+                "dred_decoder.c",
+                "dred_encoder.c",
+                "dred_rdovae_dec.c",
+                "dred_rdovae_enc.c",
+                "fargan.c",
+                "freq.c",
+                // "fwgan.c",
+                "kiss99.c",
+                "lossgen.c",
+                // "lpcnet.c",
+                "lpcnet_enc.c",
+                "lpcnet_plc.c",
+                "lpcnet_tables.c",
+                "nndsp.c",
+                "nnet.c",
+                "nnet_default.c",
+                "osce.c",
+                "osce_features.c",
+                "pitchdnn.c",
+            },
+            .flags = &.{
+                "-DOPUS_BUILD",
+                "-DHAVE_CONFIG_H",
+                "-std=gnu99",
+                "-fno-sanitize=undefined",
+            },
+        });
+    }
+    if (plc_model) |plc| {
+        mod.addIncludePath(plc.path("."));
+        mod.addCSourceFiles(.{
+            .root = plc.path(""),
+            .files = &.{
+                "dred_rdovae_dec_data.c",
+                "dred_rdovae_enc_data.c",
+                "dred_rdovae_stats_data.c",
+                "fargan_data.c",
+                "lace_data.c",
+                "lossgen_data.c",
+                "nolace_data.c",
+                "pitchdnn_data.c",
+                "plc_data.c",
+            },
+            .flags = &.{
+                "-DOPUS_BUILD",
+                "-DHAVE_CONFIG_H",
+                "-std=gnu99",
+                "-fno-sanitize=undefined",
+            },
+        });
+    }
 
     b.installArtifact(lib);
 
@@ -100,6 +175,7 @@ fn buildCelt(
     target: std.Build.ResolvedTarget,
     optimize: std.builtin.OptimizeMode,
     xiph_opus: *std.Build.Dependency,
+    plc_model: ?*std.Build.Dependency,
     config: *std.Build.Step.ConfigHeader,
 ) *std.Build.Step.Compile {
     const mod = b.addModule("celt", .{
@@ -115,6 +191,12 @@ fn buildCelt(
 
     mod.addConfigHeader(config);
     mod.addIncludePath(xiph_opus.path("include"));
+    mod.addIncludePath(xiph_opus.path("celt"));
+    mod.addIncludePath(xiph_opus.path("silk"));
+    mod.addIncludePath(xiph_opus.path("dnn"));
+    if (plc_model) |plc| {
+        mod.addIncludePath(plc.path("."));
+    }
     mod.addCSourceFiles(.{
         .root = xiph_opus.path("celt"),
         .files = &.{
@@ -161,6 +243,7 @@ fn buildSilk(
     target: std.Build.ResolvedTarget,
     optimize: std.builtin.OptimizeMode,
     xiph_opus: *std.Build.Dependency,
+    plc_model: ?*std.Build.Dependency,
     config: *std.Build.Step.ConfigHeader,
 ) *std.Build.Step.Compile {
     const mod = b.addModule("silk", .{
@@ -178,6 +261,10 @@ fn buildSilk(
     mod.addIncludePath(xiph_opus.path("silk"));
     mod.addIncludePath(xiph_opus.path("silk/float"));
     mod.addIncludePath(xiph_opus.path("celt"));
+    mod.addIncludePath(xiph_opus.path("dnn"));
+    if (plc_model) |plc| {
+        mod.addIncludePath(plc.path("."));
+    }
     mod.addCSourceFiles(.{
         .root = xiph_opus.path("silk"),
         .files = &(.{
