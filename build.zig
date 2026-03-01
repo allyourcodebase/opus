@@ -28,7 +28,7 @@ pub fn build(b: *std.Build) void {
     });
 
     const plc_model = if (deep_plc orelse false)
-        b.lazyDependency("plc_model", .{}) orelse return
+        b.lazyDependency("plc_model", .{}) orelse null
     else
         null;
 
