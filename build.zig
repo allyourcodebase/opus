@@ -92,7 +92,7 @@ pub fn build(b: *std.Build) void {
             .files = &.{
                 "burg.c",
                 "dred_coding.c",
-                "dred_compare.c",
+                // "dred_compare.c",
                 "dred_decoder.c",
                 "dred_encoder.c",
                 "dred_rdovae_dec.c",
