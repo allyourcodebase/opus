@@ -1,5 +1,14 @@
 const std = @import("std");
 
+const CpuFeatures = struct {
+    neon: bool,
+    dotprod: bool,
+    avx2: bool,
+    sse: bool,
+    sse2: bool,
+    sse4_1: bool,
+};
+
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
@@ -9,10 +18,23 @@ pub fn build(b: *std.Build) void {
     const deep_plc = b.option(bool, "deep-plc", "Use deep PLC for SILK");
     const dred = b.option(bool, "dred", "Enable DRED");
 
+    const cpu_features: CpuFeatures = .{
+        .neon = target.result.cpu.arch.isAARCH64() and
+            std.Target.aarch64.featureSetHas(target.result.cpu.features, .neon),
+        .dotprod = target.result.cpu.arch.isAARCH64() and
+            std.Target.aarch64.featureSetHas(target.result.cpu.features, .dotprod),
+
+        .avx2 = target.result.cpu.arch.isX86() and
+            std.Target.x86.featureSetHas(target.result.cpu.features, .avx2),
+        .sse = target.result.cpu.arch.isX86() and
+            std.Target.x86.featureSetHas(target.result.cpu.features, .sse),
+        .sse2 = target.result.cpu.arch.isX86() and
+            std.Target.x86.featureSetHas(target.result.cpu.features, .sse2),
+        .sse4_1 = target.result.cpu.arch.isX86() and
+            std.Target.x86.featureSetHas(target.result.cpu.features, .sse4_1),
+    };
+
     const config = b.addConfigHeader(.{}, .{
-        .HAVE_LRINTF = {},
-        .HAVE_LRINT = {},
-        .HAVE_STDINT_H = {},
         .VAR_ARRAYS = true,
         .USE_ALLOCA = null,
         .FIXED_POINT = b.option(bool, "fixed-point", "use fixed point instead of floats"),
@@ -20,11 +42,41 @@ pub fn build(b: *std.Build) void {
         .ENABLE_DRED = dred,
         .ENABLE_DEEP_PLC = deep_plc,
         .ENABLE_OSCE = b.option(bool, "osce", "Enable opus speech coding enhancement"),
-        .ENABLE_OSCE_TRAINING_DATA = b.option(
-            bool,
-            "osce-training",
-            "Enable duping of OSCE training data",
-        ),
+        .ENABLE_OSCE_BWE = b.option(bool, "osce-bwe", "Enable opus speech coding enhancement BWE"),
+        .ENABLE_HARDENING = b.option(bool, "hardening", "(default true)") orelse true,
+        .DISABLE_DEBUG_FLOAT = b.option(bool, "disable-debug-float", "(default true)") orelse true,
+        .FLOAT_APPROX = b.option(bool, "float-approx", "enable float approximations"),
+        .HAVE_DLFCN_H = true,
+        .HAVE_INTTYPES_H = true,
+        .HAVE_LRINT = true,
+        .HAVE_LRINTF = true,
+        .HAVE_STDINT_H = true,
+        .HAVE_STDIO_H = true,
+        .HAVE_STDLIB_H = true,
+        .HAVE_STRINGS_H = true,
+        .HAVE_STRING_H = true,
+        .HAVE_SYS_STAT_H = true,
+        .HAVE_SYS_TYPES_H = true,
+        .HAVE_UNISTD_H = true,
+        .OPUS_ARM_INLINE_NEON = if (cpu_features.neon) true else null,
+        .OPUS_ARM_MAY_HAVE_DOTPROD = if (cpu_features.dotprod) true else null,
+        .OPUS_ARM_MAY_HAVE_NEON_INTR = if (cpu_features.neon) true else null,
+        .OPUS_HAVE_RTCD = if (target.result.os.tag != .windows) true else null,
+        .OPUS_ARM_PRESUME_DOTPROD = if (cpu_features.dotprod) true else null,
+        .OPUS_ARM_PRESUME_NEON_INTR = if (cpu_features.neon) true else null,
+        .OPUS_ARM_PRESUME_AARCH64_NEON_INTR = if (cpu_features.neon) true else null,
+        .OPUS_X86_MAY_HAVE_AVX2 = if (cpu_features.avx2) true else null,
+        .OPUS_X86_MAY_HAVE_SSE = if (cpu_features.sse) true else null,
+        .OPUS_X86_MAY_HAVE_SSE2 = if (cpu_features.sse2) true else null,
+        .OPUS_X86_MAY_HAVE_SSE4_1 = if (cpu_features.sse4_1) true else null,
+        .OPUS_X86_PRESUME_AVX2 = if (cpu_features.avx2) true else null,
+        .OPUS_X86_PRESUME_SSE = if (cpu_features.sse) true else null,
+        .OPUS_X86_PRESUME_SSE2 = if (cpu_features.sse2) true else null,
+        .OPUS_X86_PRESUME_SSE4_1 = if (cpu_features.sse4_1) true else null,
+        .OPUS_ARM_ASM = if (target.result.cpu.arch.isArm()) true else null,
+        .OPUS_ARM_INLINE_ASM = if (target.result.cpu.arch.isArm()) true else null,
+        .OPUS_ARM_INLINE_EDSP = if (target.result.cpu.arch.isArm()) true else null,
+        .OPUS_ARM_INLINE_MEDIA = if (target.result.cpu.arch.isArm()) true else null,
     });
 
     const plc_model = if (deep_plc orelse false)
@@ -32,8 +84,8 @@ pub fn build(b: *std.Build) void {
     else
         null;
 
-    const celt = buildCelt(b, target, optimize, xiph_opus, plc_model, config);
-    const silk = buildSilk(b, target, optimize, xiph_opus, plc_model, config);
+    const celt = buildCelt(b, target, optimize, cpu_features, xiph_opus, plc_model, config);
+    const silk = buildSilk(b, target, optimize, cpu_features, xiph_opus, plc_model, config);
 
     const mod = b.addModule("opus", .{
         .target = target,
@@ -78,12 +130,7 @@ pub fn build(b: *std.Build) void {
             "mlp.c",
             "mlp_data.c",
         },
-        .flags = &.{
-            "-DOPUS_BUILD",
-            "-DHAVE_CONFIG_H",
-            "-std=gnu99",
-            "-fno-sanitize=undefined",
-        },
+        .flags = &cflags,
     });
 
     if (dred orelse false) {
@@ -101,7 +148,6 @@ pub fn build(b: *std.Build) void {
                 "freq.c",
                 // "fwgan.c",
                 "kiss99.c",
-                "lossgen.c",
                 // "lpcnet.c",
                 "lpcnet_enc.c",
                 "lpcnet_plc.c",
@@ -111,21 +157,85 @@ pub fn build(b: *std.Build) void {
                 "nnet_default.c",
                 "osce.c",
                 "osce_features.c",
+                "parse_lpcnet_weights.c",
                 "pitchdnn.c",
             },
-            .flags = &.{
-                "-DOPUS_BUILD",
-                "-DHAVE_CONFIG_H",
-                "-std=gnu99",
-                "-fno-sanitize=undefined",
-            },
+            .flags = &cflags,
         });
+
+        if (target.result.cpu.arch.isAARCH64()) {
+            mod.addIncludePath(xiph_opus.path("dnn/arm"));
+            mod.addCSourceFiles(.{
+                .root = xiph_opus.path("dnn/arm"),
+                .files = &.{
+                    "arm_dnn_map.c",
+                },
+                .flags = &cflags,
+            });
+            if (cpu_features.neon) {
+                mod.addCSourceFiles(.{
+                    .root = xiph_opus.path("dnn/arm"),
+                    .files = &.{
+                        "nnet_neon.c",
+                    },
+                    .flags = &cflags,
+                });
+            }
+            if (cpu_features.dotprod) {
+                mod.addCSourceFiles(.{
+                    .root = xiph_opus.path("dnn/arm"),
+                    .files = &.{
+                        "nnet_dotprod.c",
+                    },
+                    .flags = &cflags,
+                });
+            }
+        }
+
+        if (target.result.cpu.arch.isX86()) {
+            mod.addIncludePath(xiph_opus.path("dnn/x86"));
+            mod.addCSourceFiles(.{
+                .root = xiph_opus.path("dnn/x86"),
+                .files = &.{
+                    "x86_dnn_map.c",
+                },
+                .flags = &cflags,
+            });
+            if (cpu_features.sse2) {
+                mod.addCSourceFiles(.{
+                    .root = xiph_opus.path("dnn/x86"),
+                    .files = &.{
+                        "nnet_sse2.c",
+                    },
+                    .flags = &cflags,
+                });
+            }
+            if (cpu_features.sse4_1) {
+                mod.addCSourceFiles(.{
+                    .root = xiph_opus.path("dnn/x86"),
+                    .files = &.{
+                        "nnet_sse4_1.c",
+                    },
+                    .flags = &cflags,
+                });
+            }
+            if (cpu_features.avx2) {
+                mod.addCSourceFiles(.{
+                    .root = xiph_opus.path("dnn/x86"),
+                    .files = &.{
+                        "nnet_avx2.c",
+                    },
+                    .flags = &cflags,
+                });
+            }
+        }
     }
     if (plc_model) |plc| {
         mod.addIncludePath(plc.path("."));
         mod.addCSourceFiles(.{
             .root = plc.path(""),
             .files = &.{
+                "bbwenet_data.c",
                 "dred_rdovae_dec_data.c",
                 "dred_rdovae_enc_data.c",
                 "dred_rdovae_stats_data.c",
@@ -136,12 +246,7 @@ pub fn build(b: *std.Build) void {
                 "pitchdnn_data.c",
                 "plc_data.c",
             },
-            .flags = &.{
-                "-DOPUS_BUILD",
-                "-DHAVE_CONFIG_H",
-                "-std=gnu99",
-                "-fno-sanitize=undefined",
-            },
+            .flags = &cflags,
         });
     }
 
@@ -174,6 +279,7 @@ fn buildCelt(
     b: *std.Build,
     target: std.Build.ResolvedTarget,
     optimize: std.builtin.OptimizeMode,
+    cpu_features: CpuFeatures,
     xiph_opus: *std.Build.Dependency,
     plc_model: ?*std.Build.Dependency,
     config: *std.Build.Step.ConfigHeader,
@@ -194,6 +300,7 @@ fn buildCelt(
     mod.addIncludePath(xiph_opus.path("celt"));
     mod.addIncludePath(xiph_opus.path("silk"));
     mod.addIncludePath(xiph_opus.path("dnn"));
+    mod.addIncludePath(xiph_opus.path("."));
     if (plc_model) |plc| {
         mod.addIncludePath(plc.path("."));
     }
@@ -210,31 +317,83 @@ fn buildCelt(
             "celt_lpc.c",     "quant_bands.c",
             "rate.c",         "vq.c",
         },
-        .flags = &.{
-            "-DOPUS_BUILD",
-            "-DHAVE_CONFIG_H",
-            "-std=gnu99",
-            "-fno-sanitize=undefined",
-        },
+        .flags = &cflags,
     });
+    if (target.result.cpu.arch.isAARCH64()) {
+        mod.addIncludePath(xiph_opus.path("celt/arm"));
+        mod.addCSourceFiles(.{
+            .root = xiph_opus.path("celt/arm"),
+            .files = &.{
+                // "celt_mdct_ne10.c",
+                "armcpu.c",
+                "arm_celt_map.c",
+                // "celt_fft_ne10.c",
+            },
+            .flags = &cflags,
+        });
 
-    // "x86/x86cpu.c ",
-    // "x86/x86_celt_map.",
-    // "x86/pitch_sse.",
-    // "x86/pitch_sse2.c ",
-    // "x86/vq_sse2.",
-    // "x86/celt_lpc_sse4_1.c ",
-    // "x86/pitch_sse4_1.",
-    // "x86/pitch_avx.c",
-    // "arm/armcpu.c",
-    // "arm/arm_celt_map.",
-    // "arm/celt_pitch_xcorr_arm.s",
-    // "arm/armopts.s.in",
+        if (cpu_features.neon) {
+            mod.addCSourceFiles(.{
+                .root = xiph_opus.path("celt/arm"),
+                .files = &.{
+                    "celt_neon_intr.c",
+                    "pitch_neon_intr.c",
+                },
+                .flags = &cflags,
+            });
+        }
+    }
 
-    // "arm/celt_neon_intr.c ",
-    // "arm/pitch_neon_intr.c",
-    // "arm/celt_fft_ne10.c ",
-    // "arm/celt_mdct_ne10.c",
+    if (target.result.cpu.arch.isX86()) {
+        mod.addIncludePath(xiph_opus.path("celt/x86"));
+        mod.addCSourceFiles(.{
+            .root = xiph_opus.path("celt/x86"),
+            .files = &.{
+                "x86cpu.c",
+                "x86_celt_map.c",
+            },
+            .flags = &cflags,
+        });
+
+        if (cpu_features.sse) {
+            mod.addCSourceFiles(.{
+                .root = xiph_opus.path("celt/x86"),
+                .files = &.{
+                    "pitch_sse.c",
+                },
+                .flags = &cflags,
+            });
+        }
+        if (cpu_features.sse2) {
+            mod.addCSourceFiles(.{
+                .root = xiph_opus.path("celt/x86"),
+                .files = &.{
+                    "vq_sse2.c",
+                    "pitch_sse2.c",
+                },
+                .flags = &cflags,
+            });
+        }
+        if (cpu_features.sse4_1) {
+            mod.addCSourceFiles(.{
+                .root = xiph_opus.path("celt/x86"),
+                .files = &.{
+                    "pitch_sse4_1.c",
+                    "celt_lpc_sse4_1.c",
+                },
+                .flags = &cflags,
+            });
+        }
+        if (cpu_features.avx2) {
+            mod.addCSourceFiles(.{
+                .root = xiph_opus.path("celt/x86"),
+                .files = &.{
+                    "pitch_avx.c",
+                },
+                .flags = &cflags,
+            });
+        }
+    }
     return lib;
 }
 
@@ -242,6 +401,7 @@ fn buildSilk(
     b: *std.Build,
     target: std.Build.ResolvedTarget,
     optimize: std.builtin.OptimizeMode,
+    cpu_features: CpuFeatures,
     xiph_opus: *std.Build.Dependency,
     plc_model: ?*std.Build.Dependency,
     config: *std.Build.Step.ConfigHeader,
@@ -260,8 +420,10 @@ fn buildSilk(
     mod.addIncludePath(xiph_opus.path("include"));
     mod.addIncludePath(xiph_opus.path("silk"));
     mod.addIncludePath(xiph_opus.path("silk/float"));
+    mod.addIncludePath(xiph_opus.path("silk/fixed"));
     mod.addIncludePath(xiph_opus.path("celt"));
     mod.addIncludePath(xiph_opus.path("dnn"));
+    mod.addIncludePath(xiph_opus.path("."));
     if (plc_model) |plc| {
         mod.addIncludePath(plc.path("."));
     }
@@ -308,17 +470,72 @@ fn buildSilk(
             "stereo_find_predictor.c",     "stereo_quant_pred.c",
             "LPC_fit.c",
         } ++ silk_flp),
-        .flags = &.{
-            "-DOPUS_BUILD",
-            "-DHAVE_CONFIG_H",
-            "-fno-sanitize=undefined",
-            "-std=gnu99",
-        },
+        .flags = &cflags,
     });
 
+    if (target.result.cpu.arch.isAARCH64()) {
+        mod.addIncludePath(xiph_opus.path("silk/arm"));
+        mod.addCSourceFiles(.{
+            .root = xiph_opus.path("silk/arm"),
+            .files = &.{
+                "arm_silk_map.c",
+            },
+            .flags = &cflags,
+        });
+        if (cpu_features.neon) {
+            mod.addCSourceFiles(.{
+                .root = xiph_opus.path("silk/arm"),
+                .files = &.{
+                    "NSQ_del_dec_neon_intr.c",
+                    "LPC_inv_pred_gain_neon_intr.c",
+                    "NSQ_neon.c",
+                    "biquad_alt_neon_intr.c",
+                },
+                .flags = &cflags,
+            });
+        }
+    }
+    if (target.result.cpu.arch.isX86()) {
+        mod.addIncludePath(xiph_opus.path("silk/x86"));
+        mod.addCSourceFiles(.{
+            .root = xiph_opus.path("silk/x86"),
+            .files = &.{
+                "x86_silk_map.c",
+            },
+            .flags = &cflags,
+        });
+        if (cpu_features.sse4_1) {
+            mod.addCSourceFiles(.{
+                .root = xiph_opus.path("silk/x86"),
+                .files = &.{
+                    "VAD_sse4_1.c",
+                    "NSQ_del_dec_sse4_1.c",
+                    "NSQ_sse4_1.c",
+                    "VQ_WMat_EC_sse4_1.c",
+                },
+                .flags = &cflags,
+            });
+        }
+        if (cpu_features.avx2) {
+            mod.addCSourceFiles(.{
+                .root = xiph_opus.path("silk"),
+                .files = &.{
+                    "x86/NSQ_del_dec_avx2.c",
+                    "float/x86/inner_product_FLP_avx2.c",
+                },
+                .flags = &cflags,
+            });
+        }
+    }
     return lib;
 }
 
+const cflags = .{
+    "-DOPUS_BUILD",
+    "-DHAVE_CONFIG_H",
+    "-fno-sanitize=undefined",
+    "-std=gnu99",
+};
 const silk_flp = .{
     "float/apply_sine_window_FLP.c",
     "float/corrMatrix_FLP.c",
