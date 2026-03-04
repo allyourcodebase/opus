@@ -4,7 +4,7 @@
     .minimum_zig_version = "0.16.0-dev.1484+d0ba6642b",
     .fingerprint = 0x8db4fd2c707ee1be,
     .dependencies = .{
-        .xiph_opus = .{
+        .upstream = .{
             .url = "git+https://github.com/xiph/opus?ref=v1.6.1#22244de5a79bd1d6d623c32e72bf1954b56235be",
             .hash = "N-V-__8AACFzKgFqLpjLjErvlhtptZ-SwhDnQETUyUCS8SEQ",
         },
