@@ -39,8 +39,7 @@ pub fn build(b: *std.Build) void {
     b.installArtifact(dynlib);
     const test_step = b.step("test", "Run unit tests");
     test_step.dependOn(&run_test.step);
-
-    setupCi(b, target);
+    // setupCi(b, target);
 }
 
 const CpuFeatures = struct {
@@ -957,7 +956,7 @@ pub fn setupCi(b: *std.Build, target: std.Build.ResolvedTarget) void {
         .{ .cpu_arch = .x86_64, .os_tag = .macos },
         .{ .cpu_arch = .aarch64, .os_tag = .linux, .abi = .musl },
         .{ .cpu_arch = .x86_64, .os_tag = .linux, .abi = .musl },
-        .{ .cpu_arch = .x86_64, .os_tag = .windows },
+        .{ .cpu_arch = .x86_64, .os_tag = .windows, .abi = .gnu },
     };
 
     for (configs, 0..) |c, idx| {
