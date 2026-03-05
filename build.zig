@@ -1,5 +1,48 @@
 const std = @import("std");
 
+const BuildFlags = struct {
+    fixed_point: ?bool = null,
+    fixed_debug: ?bool = null,
+    float_api: ?bool = null,
+    assertions: ?bool = null,
+    float_approx: ?bool = null,
+    dred: ?bool = null,
+    deep_plc: ?bool = null,
+    osce: ?bool = null,
+    osce_bwe: ?bool = null,
+    hardening: ?bool = null,
+    debug_float: ?bool = null,
+    rtcd: bool = false,
+};
+
+pub fn build(b: *std.Build) void {
+    const target = b.standardTargetOptions(.{});
+    const optimize = b.standardOptimizeOption(.{});
+
+    const flags: BuildFlags = .{
+        .fixed_point = b.option(bool, "fixed-point", "use fixed point instead of floats"),
+        .fixed_debug = b.option(bool, "fixed-debug", "debug fixed point implementation"),
+        .float_api = b.option(bool, "float-api", "enable float api (default true)"),
+        .assertions = b.option(bool, "assertions", "Enable assertions (enabled by default in debug)"),
+        .float_approx = b.option(bool, "float-approx", "enable float approximations"),
+        .dred = b.option(bool, "dred", "Enable DRED"),
+        .deep_plc = b.option(bool, "deep-plc", "Use deep PLC for SILK"),
+        .osce = b.option(bool, "osce", "Enable opus speech coding enhancement"),
+        .osce_bwe = b.option(bool, "osce-bwe", "Enable opus speech coding enhancement BWE"),
+        .hardening = b.option(bool, "hardening", "Enable hardening (default true)"),
+        .debug_float = b.option(bool, "debug-float", "(default false)"),
+        .rtcd = b.option(bool, "rtcd", "Enable runtime feature detection") orelse false,
+    };
+
+    const lib, const dynlib, const run_test = buildOpus(b, target, optimize, flags);
+    b.installArtifact(lib);
+    b.installArtifact(dynlib);
+    const test_step = b.step("test", "Run unit tests");
+    test_step.dependOn(&run_test.step);
+
+    setupCi(b, target);
+}
+
 const CpuFeatures = struct {
     rtcd: bool,
     arm_v4: bool,
@@ -13,40 +56,38 @@ const CpuFeatures = struct {
     sse4_1: bool,
 };
 
-pub fn build(b: *std.Build) void {
-    const target = b.standardTargetOptions(.{});
-    const optimize = b.standardOptimizeOption(.{});
-
+pub fn buildOpus(
+    b: *std.Build,
+    target: std.Build.ResolvedTarget,
+    optimize: std.builtin.OptimizeMode,
+    flags: BuildFlags,
+) struct { *std.Build.Step.Compile, *std.Build.Step.Compile, *std.Build.Step.Run } {
     const upstream = b.dependency("upstream", .{});
-
-    const deep_plc = b.option(bool, "deep-plc", "Use deep PLC for SILK");
-    const dred = b.option(bool, "dred", "Enable DRED");
-    const rtcd = b.option(bool, "rtcd", "Enable runtime feature detection") orelse false;
     const arm = target.result.cpu.arch.isArm();
     const aarch64 = target.result.cpu.arch.isAARCH64();
     const x86 = target.result.cpu.arch.isX86();
 
     const cpu_features: CpuFeatures = .{
-        .rtcd = rtcd,
+        .rtcd = flags.rtcd,
 
-        .arm_v4 = !rtcd and arm and
+        .arm_v4 = !flags.rtcd and arm and
             std.Target.arm.featureSetHas(target.result.cpu.features, .has_v4t),
-        .arm_v5e = !rtcd and arm and
+        .arm_v5e = !flags.rtcd and arm and
             std.Target.arm.featureSetHas(target.result.cpu.features, .has_v5te),
-        .arm_v6 = !rtcd and arm and
+        .arm_v6 = !flags.rtcd and arm and
             std.Target.arm.featureSetHas(target.result.cpu.features, .has_v6),
-        .neon = !rtcd and (aarch64 or arm) and
+        .neon = !flags.rtcd and (aarch64 or arm) and
             std.Target.aarch64.featureSetHas(target.result.cpu.features, .neon),
-        .dotprod = !rtcd and (aarch64 or arm) and
+        .dotprod = !flags.rtcd and (aarch64 or arm) and
             std.Target.aarch64.featureSetHas(target.result.cpu.features, .dotprod),
 
-        .avx2 = !rtcd and x86 and
+        .avx2 = !flags.rtcd and x86 and
             std.Target.x86.featureSetHas(target.result.cpu.features, .avx2),
-        .sse = !rtcd and x86 and
+        .sse = !flags.rtcd and x86 and
             std.Target.x86.featureSetHas(target.result.cpu.features, .sse),
-        .sse2 = !rtcd and x86 and
+        .sse2 = !flags.rtcd and x86 and
             std.Target.x86.featureSetHas(target.result.cpu.features, .sse2),
-        .sse4_1 = !rtcd and x86 and
+        .sse4_1 = !flags.rtcd and x86 and
             std.Target.x86.featureSetHas(target.result.cpu.features, .sse4_1),
     };
 
@@ -66,26 +107,22 @@ pub fn build(b: *std.Build) void {
         .HAVE_SYS_TYPES_H = true,
         .HAVE_UNISTD_H = true,
         .CPU_INFO_BY_ASM = true,
-        .FIXED_POINT = b.option(bool, "fixed-point", "use fixed point instead of floats"),
-        .FIXED_DEBUG = b.option(bool, "fixed-debug", "debug fixed point implementation"),
-        .DISABLE_FLOAT_API = b.option(bool, "disable-float-api", "disable float api (default false)"),
-        .ENABLE_ASSERTIONS = b.option(
-            bool,
-            "assertions",
-            "Enable assertions (enabled by default in debug)",
-        ) orelse if (optimize == .Debug) true else null,
-        .FLOAT_APPROX = if (b.option(bool, "float-approx", "enable float approximations") orelse false)
+        .FIXED_POINT = flags.fixed_point,
+        .FIXED_DEBUG = flags.fixed_debug,
+        .DISABLE_FLOAT_API = if (flags.float_api orelse true) null else true,
+        .ENABLE_ASSERTIONS = flags.assertions orelse if (optimize == .Debug) true else null,
+        .FLOAT_APPROX = if (flags.float_approx orelse false)
             if (target.result.cpu.arch.isAARCH64() or target.result.cpu.arch.isArm() or
                 target.result.cpu.arch.isX86() or target.result.cpu.arch.isPowerPC()) true else null
         else
             null,
-        .ENABLE_DRED = dred,
-        .ENABLE_DEEP_PLC = deep_plc,
-        .ENABLE_OSCE = b.option(bool, "osce", "Enable opus speech coding enhancement"),
-        .ENABLE_OSCE_BWE = b.option(bool, "osce-bwe", "Enable opus speech coding enhancement BWE"),
-        .ENABLE_HARDENING = if (b.option(bool, "hardening", "Enable hardening (default true)") orelse true) true else null,
-        .DISABLE_DEBUG_FLOAT = b.option(bool, "disable-debug-float", "(default true)") orelse true,
-        .OPUS_HAVE_RTCD = if (rtcd) true else null,
+        .ENABLE_DRED = flags.dred,
+        .ENABLE_DEEP_PLC = flags.deep_plc,
+        .ENABLE_OSCE = flags.osce,
+        .ENABLE_OSCE_BWE = flags.osce_bwe,
+        .ENABLE_HARDENING = if (flags.hardening orelse true) true else null,
+        .DISABLE_DEBUG_FLOAT = if (flags.debug_float orelse false) true else null,
+        .OPUS_HAVE_RTCD = if (flags.rtcd) true else null,
         .OPUS_ARM_ASM = if (target.result.cpu.arch.isArm()) true else null,
         .OPUS_ARM_INLINE_ASM = if (cpu_features.arm_v4) true else null,
         .OPUS_ARM_INLINE_EDSP = if (cpu_features.arm_v5e) true else null,
@@ -93,24 +130,24 @@ pub fn build(b: *std.Build) void {
         .OPUS_ARM_INLINE_NEON = if (cpu_features.neon) true else null,
         .OPUS_ARM_PRESUME_DOTPROD = if (cpu_features.dotprod) true else null,
         .OPUS_ARM_PRESUME_NEON_INTR = if (cpu_features.neon) true else null,
-        .OPUS_ARM_PRESUME_AARCH64_NEON_INTR = if (cpu_features.neon) true else null,
+        .OPUS_ARM_PRESUME_AARCH64_NEON_INTR = if (aarch64 and cpu_features.neon) true else null,
         .OPUS_X86_PRESUME_AVX2 = if (cpu_features.avx2) true else null,
         .OPUS_X86_PRESUME_SSE = if (cpu_features.sse) true else null,
         .OPUS_X86_PRESUME_SSE2 = if (cpu_features.sse2) true else null,
         .OPUS_X86_PRESUME_SSE4_1 = if (cpu_features.sse4_1) true else null,
 
         // 'may have's are compiler capability checks.
-        .OPUS_ARM_MAY_HAVE_NEON = if (aarch64 or arm and (rtcd or cpu_features.neon)) true else null,
-        .OPUS_ARM_MAY_HAVE_NEON_INTR = if (aarch64 or arm and (rtcd or cpu_features.neon)) true else null,
-        .OPUS_ARM_MAY_HAVE_DOTPROD = if (aarch64 or arm and (rtcd or cpu_features.dotprod)) true else null,
-        .OPUS_ARM_MAY_HAVE_AARCH64_NEON_INTR = if (aarch64 and (rtcd or cpu_features.neon)) true else null,
-        .OPUS_X86_MAY_HAVE_AVX2 = if (x86 and (rtcd or cpu_features.avx2)) true else null,
-        .OPUS_X86_MAY_HAVE_SSE = if (x86 and (rtcd or cpu_features.sse)) true else null,
-        .OPUS_X86_MAY_HAVE_SSE2 = if (x86 and (rtcd or cpu_features.sse2)) true else null,
-        .OPUS_X86_MAY_HAVE_SSE4_1 = if (x86 and (rtcd or cpu_features.sse4_1)) true else null,
+        .OPUS_ARM_MAY_HAVE_NEON = if ((aarch64 or arm) and (flags.rtcd or cpu_features.neon)) true else null,
+        .OPUS_ARM_MAY_HAVE_NEON_INTR = if ((aarch64 or arm) and (flags.rtcd or cpu_features.neon)) true else null,
+        .OPUS_ARM_MAY_HAVE_DOTPROD = if ((aarch64 or arm) and (flags.rtcd or cpu_features.dotprod)) true else null,
+        .OPUS_ARM_MAY_HAVE_AARCH64_NEON_INTR = if (aarch64 and (flags.rtcd or cpu_features.neon)) true else null,
+        .OPUS_X86_MAY_HAVE_AVX2 = if (x86 and (flags.rtcd or cpu_features.avx2)) true else null,
+        .OPUS_X86_MAY_HAVE_SSE = if (x86 and (flags.rtcd or cpu_features.sse)) true else null,
+        .OPUS_X86_MAY_HAVE_SSE2 = if (x86 and (flags.rtcd or cpu_features.sse2)) true else null,
+        .OPUS_X86_MAY_HAVE_SSE4_1 = if (x86 and (flags.rtcd or cpu_features.sse4_1)) true else null,
     });
 
-    const plc_model = if (deep_plc orelse false)
+    const plc_model = if (flags.deep_plc orelse false)
         b.lazyDependency("plc_model", .{}) orelse null
     else
         null;
@@ -138,14 +175,12 @@ pub fn build(b: *std.Build) void {
         .linkage = .static,
         .root_module = mod,
     });
-    b.installArtifact(lib);
 
     const dynlib = b.addLibrary(.{
         .name = "opus",
         .linkage = .dynamic,
         .root_module = mod,
     });
-    b.installArtifact(dynlib);
 
     mod.addImport("celt", celt);
     mod.addImport("silk", silk);
@@ -183,7 +218,7 @@ pub fn build(b: *std.Build) void {
         .flags = cflags,
     });
 
-    if (dred orelse false) {
+    if (flags.dred orelse false) {
         mod.addCSourceFiles(.{
             .root = upstream.path("dnn/"),
             .files = &.{
@@ -394,9 +429,9 @@ pub fn build(b: *std.Build) void {
     test_opus_api.root_module.addIncludePath(upstream.path("celt"));
 
     const run_test = b.addRunArtifact(test_opus_api);
+    run_test.has_side_effects = false;
 
-    const test_step = b.step("test", "Run unit tests");
-    test_step.dependOn(&run_test.step);
+    return .{ lib, dynlib, run_test };
 }
 
 fn buildCelt(
@@ -818,6 +853,7 @@ fn rtcdObject(
                 .abi = target.result.abi,
             }),
             .link_libc = true,
+            .pic = true,
         }),
     });
     for (includes) |i| obj.root_module.addIncludePath(i);
@@ -906,3 +942,39 @@ const silk_flp = .{
     "float/schur_FLP.c",
     "float/sort_FLP.c",
 };
+
+pub fn setupCi(b: *std.Build, target: std.Build.ResolvedTarget) void {
+    const ci = b.step("ci", "run ci");
+    const configs: []const BuildFlags = &.{
+        .{},
+        .{ .rtcd = true },
+        .{ .dred = true, .deep_plc = true, .osce = true, .osce_bwe = true },
+        .{ .dred = true, .deep_plc = true, .osce = true, .osce_bwe = true, .rtcd = true },
+    };
+
+    const targets: []const std.Target.Query = &.{
+        .{ .cpu_arch = .aarch64, .os_tag = .macos },
+        .{ .cpu_arch = .x86_64, .os_tag = .macos },
+        .{ .cpu_arch = .aarch64, .os_tag = .linux, .abi = .musl },
+        .{ .cpu_arch = .x86_64, .os_tag = .linux, .abi = .musl },
+        .{ .cpu_arch = .x86_64, .os_tag = .windows },
+    };
+
+    for (configs, 0..) |c, idx| {
+        const native_lib, const native_dynlib, const run_native_test = buildOpus(b, target, .Debug, c);
+        ci.dependOn(&b.addInstallArtifact(native_lib, .{}).step);
+        ci.dependOn(&b.addInstallArtifact(native_dynlib, .{}).step);
+        run_native_test.setName(b.fmt("native-test-config{}", .{idx}));
+        ci.dependOn(&run_native_test.step);
+
+        for (targets) |q| {
+            const rt = b.resolveTargetQuery(q);
+            const lib, const dynlib, const run_test = buildOpus(b, rt, .Debug, c);
+            ci.dependOn(&b.addInstallArtifact(lib, .{}).step);
+            ci.dependOn(&b.addInstallArtifact(dynlib, .{}).step);
+            run_test.setName(b.fmt("test-config{}", .{idx}));
+            run_test.failing_to_execute_foreign_is_an_error = false;
+            ci.dependOn(&run_test.step);
+        }
+    }
+}
