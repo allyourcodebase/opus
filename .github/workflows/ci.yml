@@ -15,6 +15,6 @@ jobs:
     - name: Setup Zig
       uses: mlugg/setup-zig@v2
 
-    - run: sudo apt-get install -y wine qemu-user
+    - run: sudo apt-get install -y qemu-user
     
     - run: zig build ci --summary all

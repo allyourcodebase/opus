@@ -39,7 +39,7 @@ pub fn build(b: *std.Build) void {
     b.installArtifact(dynlib);
     const test_step = b.step("test", "Run unit tests");
     test_step.dependOn(&run_test.step);
-    // setupCi(b, target);
+    setupCi(b, target);
 }
 
 const CpuFeatures = struct {
@@ -963,15 +963,15 @@ pub fn setupCi(b: *std.Build, target: std.Build.ResolvedTarget) void {
         const native_lib, const native_dynlib, const run_native_test = buildOpus(b, target, .Debug, c);
         ci.dependOn(&b.addInstallArtifact(native_lib, .{}).step);
         ci.dependOn(&b.addInstallArtifact(native_dynlib, .{}).step);
-        run_native_test.setName(b.fmt("native-test-config{}", .{idx}));
+        run_native_test.setName(b.fmt("native-test-config #{} - {} ", .{ idx, c }));
         ci.dependOn(&run_native_test.step);
 
-        for (targets) |q| {
+        for (targets, 0..) |q, qidx| {
             const rt = b.resolveTargetQuery(q);
             const lib, const dynlib, const run_test = buildOpus(b, rt, .Debug, c);
             ci.dependOn(&b.addInstallArtifact(lib, .{}).step);
             ci.dependOn(&b.addInstallArtifact(dynlib, .{}).step);
-            run_test.setName(b.fmt("test-config{}", .{idx}));
+            run_test.setName(b.fmt("test-config #{} - target # {} ", .{ idx, qidx }));
             run_test.failing_to_execute_foreign_is_an_error = false;
             ci.dependOn(&run_test.step);
         }
