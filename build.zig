@@ -159,7 +159,6 @@ pub fn buildOpus(
         .target = target,
         .optimize = optimize,
         .link_libc = true,
-        .use_clang = true,
     });
     _ = tc.addModule("headers");
 
