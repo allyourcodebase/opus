@@ -864,6 +864,7 @@ const cflags = &[_][]const u8{
     "-DOPUS_BUILD",
     "-DHAVE_CONFIG_H",
     "-fno-sanitize=undefined",
+    "-std=gnu99",
 };
 
 pub fn rtcdCFlags(
