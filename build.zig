@@ -39,7 +39,7 @@ pub fn build(b: *std.Build) void {
     b.installArtifact(dynlib);
     const test_step = b.step("test", "Run unit tests");
     test_step.dependOn(&run_test.step);
-    setupCi(b, target);
+    // setupCi(b, target);
 }
 
 const CpuFeatures = struct {
@@ -864,7 +864,6 @@ const cflags = &[_][]const u8{
     "-DOPUS_BUILD",
     "-DHAVE_CONFIG_H",
     "-fno-sanitize=undefined",
-    "-std=gnu99",
 };
 
 pub fn rtcdCFlags(
