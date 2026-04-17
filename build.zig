@@ -39,7 +39,7 @@ pub fn build(b: *std.Build) void {
     b.installArtifact(dynlib);
     const test_step = b.step("test", "Run unit tests");
     test_step.dependOn(&run_test.step);
-    setupCi(b, target);
+    // setupCi(b, target);
 }
 
 const CpuFeatures = struct {
@@ -159,7 +159,6 @@ pub fn buildOpus(
         .target = target,
         .optimize = optimize,
         .link_libc = true,
-        .use_clang = true,
     });
     _ = tc.addModule("headers");
 
