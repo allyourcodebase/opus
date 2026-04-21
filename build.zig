@@ -158,8 +158,6 @@ pub fn buildOpus(
         .root_source_file = upstream.path("include/opus.h"),
         .target = target,
         .optimize = optimize,
-        .link_libc = true,
-        .use_clang = true,
     });
     _ = tc.addModule("headers");
 
