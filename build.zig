@@ -971,6 +971,7 @@ pub fn setupCi(b: *std.Build, target: std.Build.ResolvedTarget) void {
             ci.dependOn(&b.addInstallArtifact(dynlib, .{}).step);
             run_test.setName(b.fmt("test-config #{} - target # {} ", .{ idx, qidx }));
             run_test.failing_to_execute_foreign_is_an_error = false;
+            run_test.skip_foreign_checks = true;
             ci.dependOn(&run_test.step);
         }
     }
