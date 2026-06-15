@@ -434,7 +434,8 @@ pub fn buildOpus(
     test_opus_api.root_module.addIncludePath(upstream.path("celt"));
 
     const run_test = b.addRunArtifact(test_opus_api);
-    run_test.has_side_effects = false;
+    // run_test.has_side_effects = false;
+    run_test.expectExitCode(0);
 
     return .{ lib, dynlib, run_test };
 }
