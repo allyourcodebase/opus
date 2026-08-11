@@ -110,7 +110,7 @@ pub fn buildOpus(
         .FIXED_POINT = flags.fixed_point,
         .FIXED_DEBUG = flags.fixed_debug,
         .DISABLE_FLOAT_API = if (flags.float_api orelse true) null else true,
-        .ENABLE_ASSERTIONS = flags.assertions orelse if (optimize == .Debug) true else null,
+        .ENABLE_ASSERTIONS = flags.assertions orelse if (optimize == .debug) true else null,
         .FLOAT_APPROX = if (flags.float_approx orelse false)
             if (target.result.cpu.arch.isAARCH64() or target.result.cpu.arch.isArm() or
                 target.result.cpu.arch.isX86() or target.result.cpu.arch.isPowerPC()) true else null
@@ -977,7 +977,7 @@ pub fn setupCi(b: *std.Build, target: std.Build.ResolvedTarget) void {
     };
 
     for (configs, 0..) |c, idx| {
-        const native_lib, const native_dynlib, const run_native_test = buildOpus(b, target, .Debug, c, false);
+        const native_lib, const native_dynlib, const run_native_test = buildOpus(b, target, .debug, c, false);
         ci.dependOn(&b.addInstallArtifact(native_lib, .{}).step);
         ci.dependOn(&b.addInstallArtifact(native_dynlib, .{}).step);
         run_native_test.setName(b.fmt("native-test-config #{} - {} ", .{ idx, c }));
@@ -985,7 +985,7 @@ pub fn setupCi(b: *std.Build, target: std.Build.ResolvedTarget) void {
 
         for (targets, 0..) |q, qidx| {
             const rt = b.resolveTargetQuery(q);
-            const lib, const dynlib, const run_test = buildOpus(b, rt, .Debug, c, false);
+            const lib, const dynlib, const run_test = buildOpus(b, rt, .debug, c, false);
             ci.dependOn(&b.addInstallArtifact(lib, .{}).step);
             ci.dependOn(&b.addInstallArtifact(dynlib, .{}).step);
             run_test.setName(b.fmt("test-config #{} - target # {} ", .{ idx, qidx }));

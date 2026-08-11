@@ -1,7 +1,7 @@
 .{
     .name = .opus,
     .version = "0.0.2",
-    .minimum_zig_version = "0.17.0-dev.857+2b2b85c5f",
+    .minimum_zig_version = "0.17.0-dev.1640+2597da025",
     .fingerprint = 0x8db4fd2c707ee1be,
     .dependencies = .{
         .upstream = .{
