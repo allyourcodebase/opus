@@ -34,9 +34,8 @@ pub fn build(b: *std.Build) void {
         .rtcd = b.option(bool, "rtcd", "Enable runtime feature detection") orelse false,
     };
 
-    const lib, const dynlib, const run_test = buildOpus(b, target, optimize, flags);
+    const lib, const run_test = buildOpus(b, target, optimize, flags, true);
     b.installArtifact(lib);
-    b.installArtifact(dynlib);
     const test_step = b.step("test", "Run unit tests");
     test_step.dependOn(&run_test.step);
     setupCi(b, target);
@@ -60,7 +59,8 @@ pub fn buildOpus(
     target: std.Build.ResolvedTarget,
     optimize: std.builtin.OptimizeMode,
     flags: BuildFlags,
-) struct { *std.Build.Step.Compile, *std.Build.Step.Compile, *std.Build.Step.Run } {
+    export_modules: bool,
+) struct { *std.Build.Step.Compile, *std.Build.Step.Run } {
     const upstream = b.dependency("upstream", .{});
     const arm = target.result.cpu.arch.isArm();
     const aarch64 = target.result.cpu.arch.isAARCH64();
@@ -109,7 +109,7 @@ pub fn buildOpus(
         .FIXED_POINT = flags.fixed_point,
         .FIXED_DEBUG = flags.fixed_debug,
         .DISABLE_FLOAT_API = if (flags.float_api orelse true) null else true,
-        .ENABLE_ASSERTIONS = flags.assertions orelse if (optimize == .Debug) true else null,
+        .ENABLE_ASSERTIONS = flags.assertions orelse if (optimize == .debug) true else null,
         .FLOAT_APPROX = if (flags.float_approx orelse false)
             if (target.result.cpu.arch.isAARCH64() or target.result.cpu.arch.isArm() or
                 target.result.cpu.arch.isX86() or target.result.cpu.arch.isPowerPC()) true else null
@@ -151,17 +151,24 @@ pub fn buildOpus(
     else
         null;
 
-    const celt = buildCelt(b, target, optimize, cpu_features, upstream, plc_model, config);
-    const silk = buildSilk(b, target, optimize, cpu_features, upstream, plc_model, config);
+    const celt = buildCelt(b, target, optimize, cpu_features, upstream, plc_model, config, export_modules);
+    const silk = buildSilk(b, target, optimize, cpu_features, upstream, plc_model, config, export_modules);
 
     const tc = b.addTranslateC(.{
         .root_source_file = upstream.path("include/opus.h"),
         .target = target,
         .optimize = optimize,
     });
-    _ = tc.addModule("headers");
 
-    const mod = b.addModule("opus", .{
+    if (export_modules) {
+        _ = tc.addModule("headers");
+    }
+
+    const mod = if (export_modules) b.addModule("opus", .{
+        .root_source_file = tc.getOutput(),
+        .target = target,
+        .optimize = optimize,
+    }) else b.createModule(.{
         .root_source_file = tc.getOutput(),
         .target = target,
         .optimize = optimize,
@@ -173,19 +180,12 @@ pub fn buildOpus(
         .root_module = mod,
     });
 
-    const dynlib = b.addLibrary(.{
-        .name = "opus",
-        .linkage = .dynamic,
-        .root_module = mod,
-    });
-
     mod.addImport("celt", celt);
     mod.addImport("silk", silk);
 
     mod.addConfigHeader(config);
     // lib.linkLibC();
     lib.installHeadersDirectory(upstream.path("include"), ".", .{});
-    // lib.installHeader(xiph_opus.path("include/opus.h"), "opus.h");
     mod.addIncludePath(upstream.path("include"));
     mod.addIncludePath(upstream.path("src"));
     mod.addIncludePath(upstream.path("celt"));
@@ -406,8 +406,6 @@ pub fn buildOpus(
         });
     }
 
-    b.installArtifact(lib);
-
     const test_opus_api = b.addExecutable(.{
         .name = "test_opus_api",
         .root_module = b.createModule(.{
@@ -426,9 +424,10 @@ pub fn buildOpus(
     test_opus_api.root_module.addIncludePath(upstream.path("celt"));
 
     const run_test = b.addRunArtifact(test_opus_api);
-    run_test.has_side_effects = false;
+    // run_test.has_side_effects = false;
+    run_test.expectExitCode(0);
 
-    return .{ lib, dynlib, run_test };
+    return .{ lib, run_test };
 }
 
 fn buildCelt(
@@ -439,8 +438,13 @@ fn buildCelt(
     upstream: *std.Build.Dependency,
     plc_model: ?*std.Build.Dependency,
     config: *std.Build.Step.ConfigHeader,
+    export_modules: bool,
 ) *std.Build.Module {
-    const mod = b.addModule("celt", .{
+    const mod = if (export_modules) b.addModule("celt", .{
+        .target = target,
+        .optimize = optimize,
+        .link_libc = true,
+    }) else b.createModule(.{
         .target = target,
         .optimize = optimize,
         .link_libc = true,
@@ -635,8 +639,13 @@ fn buildSilk(
     upstream: *std.Build.Dependency,
     plc_model: ?*std.Build.Dependency,
     config: *std.Build.Step.ConfigHeader,
+    export_modules: bool,
 ) *std.Build.Module {
-    const mod = b.addModule("silk", .{
+    const mod = if (export_modules) b.addModule("silk", .{
+        .target = target,
+        .optimize = optimize,
+        .link_libc = true,
+    }) else b.createModule(.{
         .target = target,
         .optimize = optimize,
         .link_libc = true,
@@ -958,17 +967,15 @@ pub fn setupCi(b: *std.Build, target: std.Build.ResolvedTarget) void {
     };
 
     for (configs, 0..) |c, idx| {
-        const native_lib, const native_dynlib, const run_native_test = buildOpus(b, target, .Debug, c);
+        const native_lib, const run_native_test = buildOpus(b, target, .debug, c, false);
         ci.dependOn(&b.addInstallArtifact(native_lib, .{}).step);
-        ci.dependOn(&b.addInstallArtifact(native_dynlib, .{}).step);
         run_native_test.setName(b.fmt("native-test-config #{} - {} ", .{ idx, c }));
         ci.dependOn(&run_native_test.step);
 
         for (targets, 0..) |q, qidx| {
             const rt = b.resolveTargetQuery(q);
-            const lib, const dynlib, const run_test = buildOpus(b, rt, .Debug, c);
+            const lib, const run_test = buildOpus(b, rt, .debug, c, false);
             ci.dependOn(&b.addInstallArtifact(lib, .{}).step);
-            ci.dependOn(&b.addInstallArtifact(dynlib, .{}).step);
             run_test.setName(b.fmt("test-config #{} - target # {} ", .{ idx, qidx }));
             run_test.failing_to_execute_foreign_is_an_error = false;
             run_test.skip_foreign_checks = true;
