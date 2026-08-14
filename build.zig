@@ -34,9 +34,8 @@ pub fn build(b: *std.Build) void {
         .rtcd = b.option(bool, "rtcd", "Enable runtime feature detection") orelse false,
     };
 
-    const lib, const dynlib, const run_test = buildOpus(b, target, optimize, flags, true);
+    const lib, const run_test = buildOpus(b, target, optimize, flags, true);
     b.installArtifact(lib);
-    b.installArtifact(dynlib);
     const test_step = b.step("test", "Run unit tests");
     test_step.dependOn(&run_test.step);
     setupCi(b, target);
@@ -61,7 +60,7 @@ pub fn buildOpus(
     optimize: std.builtin.OptimizeMode,
     flags: BuildFlags,
     export_modules: bool,
-) struct { *std.Build.Step.Compile, *std.Build.Step.Compile, *std.Build.Step.Run } {
+) struct { *std.Build.Step.Compile, *std.Build.Step.Run } {
     const upstream = b.dependency("upstream", .{});
     const arm = target.result.cpu.arch.isArm();
     const aarch64 = target.result.cpu.arch.isAARCH64();
@@ -181,19 +180,12 @@ pub fn buildOpus(
         .root_module = mod,
     });
 
-    const dynlib = b.addLibrary(.{
-        .name = "opus",
-        .linkage = .dynamic,
-        .root_module = mod,
-    });
-
     mod.addImport("celt", celt);
     mod.addImport("silk", silk);
 
     mod.addConfigHeader(config);
     // lib.linkLibC();
     lib.installHeadersDirectory(upstream.path("include"), ".", .{});
-    // lib.installHeader(xiph_opus.path("include/opus.h"), "opus.h");
     mod.addIncludePath(upstream.path("include"));
     mod.addIncludePath(upstream.path("src"));
     mod.addIncludePath(upstream.path("celt"));
@@ -414,8 +406,6 @@ pub fn buildOpus(
         });
     }
 
-    b.installArtifact(lib);
-
     const test_opus_api = b.addExecutable(.{
         .name = "test_opus_api",
         .root_module = b.createModule(.{
@@ -437,7 +427,7 @@ pub fn buildOpus(
     // run_test.has_side_effects = false;
     run_test.expectExitCode(0);
 
-    return .{ lib, dynlib, run_test };
+    return .{ lib, run_test };
 }
 
 fn buildCelt(
@@ -977,17 +967,15 @@ pub fn setupCi(b: *std.Build, target: std.Build.ResolvedTarget) void {
     };
 
     for (configs, 0..) |c, idx| {
-        const native_lib, const native_dynlib, const run_native_test = buildOpus(b, target, .debug, c, false);
+        const native_lib, const run_native_test = buildOpus(b, target, .debug, c, false);
         ci.dependOn(&b.addInstallArtifact(native_lib, .{}).step);
-        ci.dependOn(&b.addInstallArtifact(native_dynlib, .{}).step);
         run_native_test.setName(b.fmt("native-test-config #{} - {} ", .{ idx, c }));
         ci.dependOn(&run_native_test.step);
 
         for (targets, 0..) |q, qidx| {
             const rt = b.resolveTargetQuery(q);
-            const lib, const dynlib, const run_test = buildOpus(b, rt, .debug, c, false);
+            const lib, const run_test = buildOpus(b, rt, .debug, c, false);
             ci.dependOn(&b.addInstallArtifact(lib, .{}).step);
-            ci.dependOn(&b.addInstallArtifact(dynlib, .{}).step);
             run_test.setName(b.fmt("test-config #{} - target # {} ", .{ idx, qidx }));
             run_test.failing_to_execute_foreign_is_an_error = false;
             run_test.skip_foreign_checks = true;
